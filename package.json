@@ -1,7 +1,7 @@
 {
   "name": "rezka-video-app",
   "version": "1.0.0",
-  "description": "Веб-приложение для просмотра фильмов и сериалов с rezka-kz.me",
+  "description": "Веб-приложение для просмотра фильмов и сериалов с парсингом rezka-kz.me",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
