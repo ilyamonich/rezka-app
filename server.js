@@ -4,106 +4,135 @@ const cheerio = require('cheerio');
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3000; // Render сам подставляет PORT
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.static('public'));
 
 const BASE_URL = 'https://rezka-kz.me';
 
-// Улучшенные заголовки, чтобы сайт думал, что запрос идёт от реального браузера
 const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
     'Referer': BASE_URL,
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache'
 };
 
-// Эндпоинт для получения списка популярных фильмов/сериалов
 app.get('/api/popular', async (req, res) => {
     try {
-        console.log('Парсинг главной страницы...');
-        const { data } = await axios.get(BASE_URL, { headers });
+        console.log('Fetching main page...');
+        const { data } = await axios.get(BASE_URL, { headers, timeout: 10000 });
         const $ = cheerio.load(data);
         const items = [];
 
-        // Селектор блока с фильмом (актуально для rezka-kz.me)
-        $('.b-content__inline_item').each((i, elem) => {
-            const titleElem = $(elem).find('.b-content__inline_item-link a');
-            const title = titleElem.text().trim();
-            const link = titleElem.attr('href');
-            const poster = $(elem).find('.b-content__inline_item-img img').attr('src');
+        // Пробуем разные селекторы (адаптация под возможные изменения сайта)
+        let movieItems = $('.b-content__inline_item');
+        if (movieItems.length === 0) movieItems = $('.short-item, .movie-item, .film-item');
+        if (movieItems.length === 0) movieItems = $('.item, .movie, .poster');
+        
+        console.log(`Found ${movieItems.length} movie items`);
 
-            if (title && link) {
+        movieItems.each((i, elem) => {
+            let title = '', link = '', poster = '';
+
+            // Способ 1: стандартный
+            title = $(elem).find('.b-content__inline_item-link a').text().trim();
+            link = $(elem).find('.b-content__inline_item-link a').attr('href');
+            poster = $(elem).find('.b-content__inline_item-img img').attr('src');
+
+            // Способ 2: альтернативный
+            if (!title) {
+                title = $(elem).find('a').first().attr('title') || $(elem).find('a').first().text().trim();
+                link = $(elem).find('a').first().attr('href');
+                poster = $(elem).find('img').first().attr('src');
+            }
+
+            // Способ 3: любые ссылка и картинка
+            if (!link) {
+                const anyLink = $(elem).find('a').first();
+                link = anyLink.attr('href');
+                title = anyLink.text().trim() || anyLink.attr('title') || 'Без названия';
+                poster = $(elem).find('img').first().attr('src') || $(elem).find('img').attr('data-src');
+            }
+
+            if (link && title) {
+                if (link.startsWith('/')) link = BASE_URL + link;
+                if (!link.startsWith('http')) link = BASE_URL + '/' + link;
+                if (poster && poster.startsWith('/')) poster = BASE_URL + poster;
+                if (!poster) poster = 'https://via.placeholder.com/200x300?text=No+Image';
+
                 items.push({
                     id: link.split('/').pop().replace('.html', ''),
-                    title,
-                    poster: poster || 'https://via.placeholder.com/200x300?text=No+Poster',
-                    url: link.startsWith('http') ? link : BASE_URL + link
+                    title: title.substring(0, 50),
+                    poster: poster,
+                    url: link
                 });
             }
         });
 
-        console.log(`Найдено ${items.length} фильмов`);
-        res.json(items.slice(0, 20)); // первые 20
+        console.log(`Extracted ${items.length} items`);
+        if (items.length === 0) console.log('HTML sample:', data.substring(0, 500));
+        res.json(items.slice(0, 20));
     } catch (err) {
-        console.error('Ошибка в /api/popular:', err.message);
-        res.status(500).json({ error: 'Не удалось загрузить список фильмов', details: err.message });
+        console.error('Error in /api/popular:', err.message);
+        res.status(500).json({ error: 'Failed to fetch movies', details: err.message });
     }
 });
 
-// Эндпоинт для получения iframe плеера по URL фильма
 app.get('/api/player', async (req, res) => {
     const { url } = req.query;
-    if (!url) {
-        return res.status(400).json({ error: 'Не передан URL фильма' });
-    }
+    if (!url) return res.status(400).json({ error: 'No URL provided' });
 
     try {
-        console.log(`Загрузка страницы фильма: ${url}`);
-        const { data } = await axios.get(url, { headers });
+        console.log(`Fetching player from: ${url}`);
+        const { data } = await axios.get(url, { headers, timeout: 15000 });
         const $ = cheerio.load(data);
         let iframeSrc = null;
 
-        // Ищем iframe плеера
-        $('iframe').each((i, elem) => {
-            const src = $(elem).attr('src');
-            if (src && (src.includes('cdn') || src.includes('player') || src.includes('video') || src.includes('embed'))) {
-                iframeSrc = src;
-                return false; // прерываем цикл
-            }
-        });
+        const iframeSelectors = [
+            'iframe[src*="player"]',
+            'iframe[src*="cdn"]',
+            'iframe[src*="video"]',
+            'iframe[src*="embed"]',
+            '.b-player__embed iframe',
+            '#player iframe',
+            '.video-player iframe'
+        ];
 
-        // Альтернативный поиск в специальном блоке
-        if (!iframeSrc) {
-            const playerDiv = $('.b-player__embed');
-            if (playerDiv.length) {
-                const iframe = playerDiv.find('iframe');
+        for (const selector of iframeSelectors) {
+            const iframe = $(selector);
+            if (iframe.length) {
                 iframeSrc = iframe.attr('src');
+                if (iframeSrc) break;
             }
         }
 
         if (!iframeSrc) {
-            console.warn(`Плеер не найден на странице ${url}`);
-            return res.status(404).json({ error: 'Плеер не найден на странице' });
+            $('iframe').each((i, elem) => {
+                const src = $(elem).attr('src');
+                if (src && (src.includes('http') || src.startsWith('//'))) {
+                    iframeSrc = src;
+                    return false;
+                }
+            });
         }
 
-        // Приводим ссылку к абсолютной
+        if (!iframeSrc) {
+            console.warn(`No iframe found on ${url}`);
+            return res.status(404).json({ error: 'Player iframe not found' });
+        }
+
         if (iframeSrc.startsWith('//')) iframeSrc = 'https:' + iframeSrc;
         if (iframeSrc.startsWith('/')) iframeSrc = BASE_URL + iframeSrc;
 
-        console.log(`Найден плеер: ${iframeSrc}`);
+        console.log(`Found player: ${iframeSrc}`);
         res.json({ iframeSrc });
     } catch (err) {
-        console.error(`Ошибка в /api/player для URL ${url}:`, err.message);
-        res.status(500).json({ error: 'Ошибка загрузки страницы с плеером', details: err.message });
+        console.error(`Error in /api/player for ${url}:`, err.message);
+        res.status(500).json({ error: 'Failed to load player', details: err.message });
     }
 });
 
-// Запуск сервера
 app.listen(PORT, () => {
-    console.log(`✅ Сервер запущен на порту ${PORT}`);
-    console.log(`🌐 Откройте http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
