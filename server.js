@@ -11,6 +11,9 @@ app.use(express.static('public'));
 
 const BASE_URL = 'https://rezka-kz.me';
 
+// Глобальная переменная для CSRF-токена (будет получена при первом запросе)
+let csrfToken = null;
+
 const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/javascript, */*; q=0.01',
@@ -19,27 +22,61 @@ const headers = {
     'X-Requested-With': 'XMLHttpRequest'
 };
 
-// Прокси для постеров (обходит защиту от горячих ссылок)
+// Функция для получения CSRF-токена с главной страницы
+async function fetchCsrfToken() {
+    try {
+        const { data } = await axios.get(BASE_URL, {
+            headers: { 'User-Agent': headers['User-Agent'] },
+            timeout: 10000
+        });
+        const match = data.match(/csrf-token" content="([^"]+)"/i) ||
+                      data.match(/name="csrf-token" value="([^"]+)"/i) ||
+                      data.match(/csrf_token\s*=\s*'([^']+)'/i);
+        if (match && match[1]) {
+            csrfToken = match[1];
+            console.log('CSRF token получен:', csrfToken);
+            return csrfToken;
+        }
+        console.warn('CSRF token не найден на главной странице');
+        return null;
+    } catch (err) {
+        console.error('Ошибка получения CSRF токена:', err.message);
+        return null;
+    }
+}
+
+// Вызовем получение токена при старте сервера
+fetchCsrfToken();
+
+// Прокси для постеров (с повторными попытками)
 app.get('/proxy-poster', async (req, res) => {
     const imageUrl = req.query.url;
     if (!imageUrl) return res.status(400).send('Missing url');
-    try {
-        const response = await axios.get(imageUrl, {
-            headers: {
-                'User-Agent': headers['User-Agent'],
-                'Referer': BASE_URL
-            },
-            responseType: 'stream'
-        });
-        res.set('Content-Type', response.headers['content-type']);
-        response.data.pipe(res);
-    } catch (err) {
-        console.error('Poster proxy error:', err.message);
-        res.status(404).send('Image not found');
+
+    const maxRetries = 3;
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const response = await axios.get(imageUrl, {
+                headers: {
+                    'User-Agent': headers['User-Agent'],
+                    'Referer': BASE_URL
+                },
+                responseType: 'stream',
+                timeout: 15000
+            });
+            res.set('Content-Type', response.headers['content-type']);
+            response.data.pipe(res);
+            return;
+        } catch (err) {
+            console.error(`Попытка ${i+1} прокси постера не удалась:`, err.message);
+            if (i === maxRetries - 1) {
+                res.status(404).send('Image not found after retries');
+            }
+        }
     }
 });
 
-// Получение списка популярных фильмов/сериалов
+// Эндпоинт списка фильмов
 app.get('/api/popular', async (req, res) => {
     try {
         console.log('Fetching main page...');
@@ -83,24 +120,33 @@ app.get('/api/popular', async (req, res) => {
     }
 });
 
-// Получение плеера через AJAX API сайта
+// Получение плеера через AJAX API с CSRF-токеном и translator_id
 app.get('/api/player', async (req, res) => {
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
     try {
-        // Загружаем страницу фильма для извлечения ID
+        // Если токена ещё нет, попробуем получить сейчас
+        if (!csrfToken) await fetchCsrfToken();
+
+        // Получаем страницу фильма, чтобы извлечь ID и translator_id
         const { data: pageHtml } = await axios.get(url, { headers, timeout: 15000 });
         const $ = cheerio.load(pageHtml);
 
         let isSeries = url.includes('/series/');
         let contentId = null;
+        let translatorId = '1'; // значение по умолчанию
 
-        // Пытаемся найти ID в скриптах
-        const scriptWithId = $('script:contains("data-post_id")').html() || $('script:contains("post_id")').html();
-        if (scriptWithId) {
-            const match = scriptWithId.match(/data-post_id["']?\s*:\s*["']?(\d+)/);
-            if (match) contentId = match[1];
+        // Ищем ID и translator_id в скриптах
+        const scripts = $('script').map((i, el) => $(el).html()).get();
+        for (const script of scripts) {
+            if (!script) continue;
+            if (!contentId) {
+                const idMatch = script.match(/data-post_id["']?\s*:\s*["']?(\d+)/);
+                if (idMatch) contentId = idMatch[1];
+            }
+            const transMatch = script.match(/data-translator_id["']?\s*:\s*["']?(\d+)/);
+            if (transMatch) translatorId = transMatch[1];
         }
         if (!contentId) {
             const urlMatch = url.match(/(\d+)-[^\/]+\.html$/);
@@ -113,10 +159,9 @@ app.get('/api/player', async (req, res) => {
 
         let apiUrl = '';
         if (isSeries) {
-            // Для сериалов нужно также парсить сезон/серию (пока берём по умолчанию)
-            apiUrl = `${BASE_URL}/ajax/get_cdn_series/?t=${Date.now()}&id=${contentId}&season=1&episode=1&action=get_episodes`;
+            apiUrl = `${BASE_URL}/ajax/get_cdn_series/?t=${Date.now()}&id=${contentId}&translator_id=${translatorId}&season=1&episode=1&action=get_episodes`;
         } else {
-            apiUrl = `${BASE_URL}/ajax/get_cdn_movie/?t=${Date.now()}&id=${contentId}&action=get_movie`;
+            apiUrl = `${BASE_URL}/ajax/get_cdn_movie/?t=${Date.now()}&id=${contentId}&translator_id=${translatorId}&action=get_movie`;
         }
 
         console.log(`Requesting player API: ${apiUrl}`);
@@ -124,43 +169,40 @@ app.get('/api/player', async (req, res) => {
             headers: {
                 ...headers,
                 'Referer': url,
+                'X-CSRF-TOKEN': csrfToken || '',
                 'Accept': 'application/json, text/javascript, */*; q=0.01'
             },
             timeout: 10000
         });
 
-        // Логируем полный ответ для отладки (важно для выявления структуры)
         console.log('API response:', JSON.stringify(playerResponse.data, null, 2));
 
         let iframeSrc = null;
         const data = playerResponse.data;
 
-        // Универсальный парсер ответа
+        // Парсим разные форматы ответа
         if (data && typeof data === 'object') {
-            if (data.url) iframeSrc = data.url;
+            if (data.success && data.data) {
+                if (data.data.url) iframeSrc = data.data.url;
+                else if (data.data.file) iframeSrc = data.data.file;
+                else if (data.data.video) {
+                    if (data.data.video.url) iframeSrc = data.data.video.url;
+                    else if (data.data.video['720p']) iframeSrc = data.data.video['720p'];
+                    else if (data.data.video['480p']) iframeSrc = data.data.video['480p'];
+                }
+            } else if (data.url) iframeSrc = data.url;
             else if (data.video) {
                 if (data.video.url) iframeSrc = data.video.url;
                 else if (data.video['720p']) iframeSrc = data.video['720p'];
-                else if (data.video['480p']) iframeSrc = data.video['480p'];
-                else if (data.video['360p']) iframeSrc = data.video['360p'];
-            }
-            else if (data.source) iframeSrc = data.source;
-            else if (data.file) iframeSrc = data.file;
+            } else if (data.file) iframeSrc = data.file;
             else if (data.link) iframeSrc = data.link;
-            else if (data.iframe) iframeSrc = data.iframe;
-            else if (Array.isArray(data.sources) && data.sources[0]) {
-                iframeSrc = data.sources[0].file || data.sources[0].url;
-            }
-            else if (data.success && data.data) {
-                iframeSrc = data.data.url || data.data.file;
-            }
         } else if (typeof data === 'string') {
             const match = data.match(/<iframe[^>]+src=["']([^"']+)["']/);
             if (match) iframeSrc = match[1];
         }
 
         if (!iframeSrc) {
-            console.error('No player URL found in API response');
+            console.error('No player URL found');
             return res.status(404).json({ error: 'Player URL not found', rawResponse: data });
         }
 
