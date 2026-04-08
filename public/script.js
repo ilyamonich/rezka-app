@@ -7,6 +7,18 @@ const modal = document.getElementById('playerModal');
 const playerFrame = document.getElementById('playerFrame');
 const closeBtn = document.querySelector('.close');
 
+// Получение URL постера через прокси
+function getPosterUrl(originalUrl) {
+    if (!originalUrl) return 'https://via.placeholder.com/200x300?text=No+Image';
+    if (originalUrl.startsWith('http')) {
+        return `/proxy-poster?url=${encodeURIComponent(originalUrl)}`;
+    }
+    // Если относительный, превращаем в абсолютный
+    const fullUrl = originalUrl.startsWith('/') ? `https://rezka-kz.me${originalUrl}` : originalUrl;
+    return `/proxy-poster?url=${encodeURIComponent(fullUrl)}`;
+}
+
+// Загрузка списка фильмов
 async function loadPopularMovies() {
     try {
         moviesGrid.innerHTML = '<div class="loader">Загрузка фильмов...</div>';
@@ -21,6 +33,7 @@ async function loadPopularMovies() {
     }
 }
 
+// Рендер сетки фильмов
 function renderMovies(movies) {
     if (!movies.length) {
         moviesGrid.innerHTML = '<div class="loader">😕 Фильмы не найдены</div>';
@@ -28,7 +41,7 @@ function renderMovies(movies) {
     }
     moviesGrid.innerHTML = movies.map(movie => `
         <div class="movie-card" data-url="${escapeHtml(movie.url)}">
-            <img class="movie-poster" src="${escapeHtml(movie.poster)}" alt="${escapeHtml(movie.title)}" loading="lazy" 
+            <img class="movie-poster" src="${getPosterUrl(movie.poster)}" alt="${escapeHtml(movie.title)}" loading="lazy" 
                  onerror="this.src='https://via.placeholder.com/200x300?text=Ошибка+загрузки'">
             <div class="movie-title">${escapeHtml(movie.title)}</div>
         </div>
@@ -39,10 +52,10 @@ function renderMovies(movies) {
     });
 }
 
+// Открыть плеер
 async function openPlayer(movieUrl) {
     if (!movieUrl) return;
-    
-    modal.style.display = 'flex';
+    openModal();
     playerFrame.src = '';
     playerFrame.srcdoc = '<html><body style="background:#000;color:#fff;display:flex;align-items:center;justify-content:center;height:100%;margin:0;">Загрузка плеера...</body></html>';
     
@@ -64,6 +77,7 @@ async function openPlayer(movieUrl) {
     }
 }
 
+// Поиск
 function searchMovies(query) {
     const lowerQuery = query.toLowerCase().trim();
     if (!lowerQuery) {
@@ -74,6 +88,7 @@ function searchMovies(query) {
     renderMovies(filtered);
 }
 
+// Вспомогательная функция для экранирования HTML
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>]/g, function(m) {
@@ -84,19 +99,26 @@ function escapeHtml(str) {
     });
 }
 
-closeBtn.onclick = () => {
-    modal.style.display = 'none';
+// Управление модальным окном
+function openModal() {
+    modal.classList.add('show');
+    document.body.classList.add('modal-open');
+}
+
+function closeModal() {
+    modal.classList.remove('show');
+    document.body.classList.remove('modal-open');
     playerFrame.src = '';
-};
+}
+
+closeBtn.onclick = closeModal;
 window.onclick = (e) => {
-    if (e.target === modal) {
-        modal.style.display = 'none';
-        playerFrame.src = '';
-    }
+    if (e.target === modal) closeModal();
 };
 
 searchInput.addEventListener('input', (e) => {
     searchMovies(e.target.value);
 });
 
+// Запуск
 loadPopularMovies();
