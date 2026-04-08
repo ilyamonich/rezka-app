@@ -180,3 +180,9 @@ body.modal-open {
         font-size: 0.8rem;
     }
 }
+
+body.modal-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+}
