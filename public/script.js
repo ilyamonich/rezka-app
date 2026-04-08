@@ -7,7 +7,6 @@ const modal = document.getElementById('playerModal');
 const playerFrame = document.getElementById('playerFrame');
 const closeBtn = document.querySelector('.close');
 
-// Прокси для постеров
 function getPosterUrl(originalUrl) {
     if (!originalUrl) return 'https://via.placeholder.com/200x300?text=No+Image';
     if (originalUrl.startsWith('http')) {
