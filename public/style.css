@@ -1,3 +1,102 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+}
+
+body {
+    background: #0a0f1e;
+    color: #eef2ff;
+}
+
+header {
+    background: #111827;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    border-bottom: 1px solid #2d3748;
+}
+
+h1 {
+    font-size: 1.6rem;
+    letter-spacing: 1px;
+}
+
+.search-container input {
+    padding: 0.5rem 1rem;
+    border-radius: 40px;
+    border: none;
+    background: #1f2937;
+    color: white;
+    width: 260px;
+    font-size: 1rem;
+    outline: none;
+    transition: 0.2s;
+}
+
+.search-container input:focus {
+    background: #2d3a4b;
+    box-shadow: 0 0 0 2px #3b82f6;
+}
+
+.movies-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1.8rem;
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.movie-card {
+    background: #111827;
+    border-radius: 16px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.movie-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.5);
+}
+
+.movie-poster {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    background: #1e293b;
+}
+
+.movie-title {
+    padding: 0.75rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    text-align: center;
+    background: #0f172a;
+    color: #f1f5f9;
+}
+
+.loader {
+    text-align: center;
+    grid-column: 1 / -1;
+    padding: 3rem;
+    font-size: 1.2rem;
+    color: #94a3b8;
+}
+
+/* Модальное окно без дергания */
+body.modal-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+}
+
 .modal {
     display: none;
     position: fixed;
@@ -12,6 +111,16 @@
     justify-content: center;
 }
 
+.modal.show {
+    display: flex !important;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
 .modal-content {
     position: relative;
     width: 90%;
@@ -19,11 +128,35 @@
     background: #000;
     border-radius: 20px;
     overflow: hidden;
+    box-shadow: 0 25px 40px rgba(0,0,0,0.6);
+}
+
+.close {
+    position: absolute;
+    top: 12px;
+    right: 20px;
+    color: white;
+    font-size: 32px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10;
+    background: rgba(0,0,0,0.5);
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: 0.2s;
+}
+
+.close:hover {
+    background: #ef4444;
 }
 
 .player-wrapper {
     position: relative;
-    padding-bottom: 56.25%;
+    padding-bottom: 56.25%; /* 16:9 */
     height: 0;
     background: #000;
 }
@@ -35,4 +168,15 @@
     width: 100%;
     height: 100%;
     border: none;
+}
+
+@media (max-width: 640px) {
+    .movies-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 1rem;
+        padding: 1rem;
+    }
+    .movie-title {
+        font-size: 0.8rem;
+    }
 }
