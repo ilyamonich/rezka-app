@@ -90,7 +90,7 @@ h1 {
     color: #94a3b8;
 }
 
-/* Модальное окно без дергания */
+/* Модальное окно — исправлено дерганье */
 body.modal-open {
     overflow: hidden;
     position: fixed;
