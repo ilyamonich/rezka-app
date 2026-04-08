@@ -7,72 +7,75 @@ const modal = document.getElementById('playerModal');
 const playerFrame = document.getElementById('playerFrame');
 const closeBtn = document.querySelector('.close');
 
-// Загружаем популярные фильмы
 async function loadPopularMovies() {
     try {
-        moviesGrid.innerHTML = '<div class="loader">Загрузка...</div>';
+        moviesGrid.innerHTML = '<div class="loader">Загрузка фильмов...</div>';
         const response = await fetch(`${API_BASE}/popular`);
-        if (!response.ok) throw new Error('Ошибка загрузки');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         moviesData = await response.json();
+        if (!moviesData.length) throw new Error('Нет данных');
         renderMovies(moviesData);
     } catch (error) {
         console.error(error);
-        moviesGrid.innerHTML = '<div class="loader">❌ Не удалось загрузить фильмы. Проверьте соединение или селекторы парсинга.</div>';
+        moviesGrid.innerHTML = '<div class="loader">❌ Ошибка загрузки. Попробуйте позже.</div>';
     }
 }
 
-// Рендер сетки
 function renderMovies(movies) {
     if (!movies.length) {
-        moviesGrid.innerHTML = '<div class="loader">😕 Ничего не найдено</div>';
+        moviesGrid.innerHTML = '<div class="loader">😕 Фильмы не найдены</div>';
         return;
     }
     moviesGrid.innerHTML = movies.map(movie => `
-        <div class="movie-card" data-url="${movie.url}">
-            <img class="movie-poster" src="${movie.poster}" alt="${movie.title}" loading="lazy" onerror="this.src='https://via.placeholder.com/200x300?text=No+Poster'">
+        <div class="movie-card" data-url="${escapeHtml(movie.url)}">
+            <img class="movie-poster" src="${escapeHtml(movie.poster)}" alt="${escapeHtml(movie.title)}" loading="lazy" 
+                 onerror="this.src='https://via.placeholder.com/200x300?text=Ошибка+загрузки'">
             <div class="movie-title">${escapeHtml(movie.title)}</div>
         </div>
     `).join('');
 
-    // Добавляем обработчики кликов
     document.querySelectorAll('.movie-card').forEach(card => {
         card.addEventListener('click', () => openPlayer(card.dataset.url));
     });
 }
 
-// Открыть плеер в модалке
 async function openPlayer(movieUrl) {
     if (!movieUrl) return;
     
-    // Показываем модалку с загрузкой
     modal.style.display = 'flex';
-    playerFrame.src = ''; // очищаем
-    playerFrame.style.height = '100%';
+    playerFrame.src = '';
+    playerFrame.srcdoc = '<html><body style="background:#000;color:#fff;display:flex;align-items:center;justify-content:center;height:100%;margin:0;">Загрузка плеера...</body></html>';
     
     try {
         const response = await fetch(`${API_BASE}/player?url=${encodeURIComponent(movieUrl)}`);
-        if (!response.ok) throw new Error('Не удалось получить плеер');
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка сервера');
+        }
         const data = await response.json();
         if (data.iframeSrc) {
             playerFrame.src = data.iframeSrc;
         } else {
-            playerFrame.srcdoc = '<html style="background:#000;color:white;display:flex;align-items:center;justify-content:center;height:100%;"><p>Плеер не найден 😞</p></html>';
+            throw new Error('Плеер не найден');
         }
     } catch (err) {
         console.error(err);
-        playerFrame.srcdoc = '<html style="background:#000;color:white;display:flex;align-items:center;justify-content:center;height:100%;"><p>Ошибка загрузки видео</p></html>';
+        playerFrame.srcdoc = `<html><body style="background:#000;color:#fff;display:flex;align-items:center;justify-content:center;height:100%;margin:0;text-align:center;">❌ Ошибка: ${escapeHtml(err.message)}</body></html>`;
     }
 }
 
-// Поиск по названию
 function searchMovies(query) {
-    const lowerQuery = query.toLowerCase();
+    const lowerQuery = query.toLowerCase().trim();
+    if (!lowerQuery) {
+        renderMovies(moviesData);
+        return;
+    }
     const filtered = moviesData.filter(movie => movie.title.toLowerCase().includes(lowerQuery));
     renderMovies(filtered);
 }
 
-// Защита от XSS
 function escapeHtml(str) {
+    if (!str) return '';
     return str.replace(/[&<>]/g, function(m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
@@ -81,10 +84,9 @@ function escapeHtml(str) {
     });
 }
 
-// Закрытие модалки
 closeBtn.onclick = () => {
     modal.style.display = 'none';
-    playerFrame.src = ''; // останавливаем видео
+    playerFrame.src = '';
 };
 window.onclick = (e) => {
     if (e.target === modal) {
@@ -93,10 +95,8 @@ window.onclick = (e) => {
     }
 };
 
-// Обработчик поиска
 searchInput.addEventListener('input', (e) => {
     searchMovies(e.target.value);
 });
 
-// Запуск
 loadPopularMovies();
