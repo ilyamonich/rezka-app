@@ -7,18 +7,16 @@ const modal = document.getElementById('playerModal');
 const playerFrame = document.getElementById('playerFrame');
 const closeBtn = document.querySelector('.close');
 
-// Получение URL постера через прокси
+// Прокси для постеров
 function getPosterUrl(originalUrl) {
     if (!originalUrl) return 'https://via.placeholder.com/200x300?text=No+Image';
     if (originalUrl.startsWith('http')) {
         return `/proxy-poster?url=${encodeURIComponent(originalUrl)}`;
     }
-    // Если относительный, превращаем в абсолютный
     const fullUrl = originalUrl.startsWith('/') ? `https://rezka-kz.me${originalUrl}` : originalUrl;
     return `/proxy-poster?url=${encodeURIComponent(fullUrl)}`;
 }
 
-// Загрузка списка фильмов
 async function loadPopularMovies() {
     try {
         moviesGrid.innerHTML = '<div class="loader">Загрузка фильмов...</div>';
@@ -33,7 +31,6 @@ async function loadPopularMovies() {
     }
 }
 
-// Рендер сетки фильмов
 function renderMovies(movies) {
     if (!movies.length) {
         moviesGrid.innerHTML = '<div class="loader">😕 Фильмы не найдены</div>';
@@ -52,7 +49,17 @@ function renderMovies(movies) {
     });
 }
 
-// Открыть плеер
+function openModal() {
+    modal.classList.add('show');
+    document.body.classList.add('modal-open');
+}
+
+function closeModal() {
+    modal.classList.remove('show');
+    document.body.classList.remove('modal-open');
+    playerFrame.src = '';
+}
+
 async function openPlayer(movieUrl) {
     if (!movieUrl) return;
     openModal();
@@ -77,7 +84,6 @@ async function openPlayer(movieUrl) {
     }
 }
 
-// Поиск
 function searchMovies(query) {
     const lowerQuery = query.toLowerCase().trim();
     if (!lowerQuery) {
@@ -88,7 +94,6 @@ function searchMovies(query) {
     renderMovies(filtered);
 }
 
-// Вспомогательная функция для экранирования HTML
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>]/g, function(m) {
@@ -97,18 +102,6 @@ function escapeHtml(str) {
         if (m === '>') return '&gt;';
         return m;
     });
-}
-
-// Управление модальным окном
-function openModal() {
-    modal.classList.add('show');
-    document.body.classList.add('modal-open');
-}
-
-function closeModal() {
-    modal.classList.remove('show');
-    document.body.classList.remove('modal-open');
-    playerFrame.src = '';
 }
 
 closeBtn.onclick = closeModal;
@@ -120,5 +113,4 @@ searchInput.addEventListener('input', (e) => {
     searchMovies(e.target.value);
 });
 
-// Запуск
 loadPopularMovies();
